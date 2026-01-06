@@ -11,5 +11,6 @@ app.include_router(ingest_data_router, prefix="/api")
 @app.get("/health",status_code = status.HTTP_200_OK)
 def health():
     return {
-        "status":"ok"
+        "status": status.HTTP_200_OK,
+        "message":"success check ok!"
     }
