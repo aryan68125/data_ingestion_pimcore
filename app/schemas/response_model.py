@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional 
 
 class IngestResponse(BaseModel):
-    rows: int  = Field(default=0)
-    data: List[Dict[str, Any]] = Field(default=[])
+    status: int
+    error: Optional[str] = None
+    rows: int = 0
+    data: List[Dict[str, Any]] = Field(default_factory=list)

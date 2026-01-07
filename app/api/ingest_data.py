@@ -17,6 +17,9 @@ def ingest_data(request:IngestionRequest):
         if not request.file_path:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ErrorMessages.FILE_URL_IS_NONE.value)
+        if not request.file_type:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=ErrorMessages.FILE_TYPE_IS_NONE.value)
         records = [
             {
                 "name":"Rollex",
@@ -42,6 +45,7 @@ def ingest_data(request:IngestionRequest):
             detail=str(e))
     
     return IngestResponse(
+        status=status.HTTP_200_OK,
         rows=len(records),
         data=records
-    ) 
+    )
