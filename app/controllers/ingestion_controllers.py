@@ -41,10 +41,10 @@ class IngestionController:
                 detail=f"Invalid JSON file: {str(e)}"
             )
 
-        except Exception:
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=ErrorMessages.INTERNAL_SERVER_ERROR.value
+                detail=ErrorMessages.INTERNAL_SERVER_ERROR.value + " : " + {str(e)}
             )
         
         # Memory taken by the dataframe
@@ -66,6 +66,7 @@ class IngestionController:
             total_rows=total_rows,
             page=request.page,
             chunk_size_by_records=request.chunk_size_by_records,
+            chunk_size_by_memory=request.chunk_size_by_memory,
             df_memory_usage_mb=memory_mb,
             df_memory_usage_bytes=memory_bytes,
             data=records

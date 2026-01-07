@@ -7,6 +7,7 @@ class IngestionRequest(BaseModel):
     file_type : str = Field(default="json", description="Type of input file you want to ingest (JSON or EXCEL)")
     page: int = Field(default=1, ge=1, description="Page number (1-based)")
     chunk_size_by_records: Optional[int] = Field(default=None, ge=1, le=4000, description="Define your chunk size by number of records per chunk")
+    # Do NOT exceed memory under ANY circumstances — even for the first row 
     chunk_size_by_memory: Optional[int] = Field(default=None,description = "Define your chunk size by memory taken by dataframe in bytes")
     
     @model_validator(mode="after")
