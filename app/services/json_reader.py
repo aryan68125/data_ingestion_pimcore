@@ -15,11 +15,16 @@ class JsonIngestionService:
         offset = (page - 1) * page_size
         limit = page_size
 
+        # page records
         collected : List[Dict] = []
+        # Ro-level dataframes for memory calculations
         collected_dfs: List[pd.DataFrame] = []
+        # global row counter
         current_index = 0
+        # count all rows access all files
         total_rows = 0
 
+        # find all the files in a directory via looping
         for base_path in paths:
             files = (
                 fs.glob(f"{base_path.rstrip('/')}/**/*.json")
@@ -28,9 +33,11 @@ class JsonIngestionService:
             )
 
             for file in files:
+                # read each file inside the current directory
                 with fs.open(file,'r') as f:
                     df = pd.read_json(f,orient="records",dtype=False)
 
+                # record level streaming loop
                 records = df.to_dict(orient="records")
 
                 for idx, record in enumerate(records):
