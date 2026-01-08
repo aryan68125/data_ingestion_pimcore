@@ -1,60 +1,115 @@
 import pandas as pd
+import ijson
 import fsspec
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
+
+from app.utils.json_decimal_encoder import orjson_default
+
+import httpx
+import orjson
 
 class JsonIngestionService:
-    # This method is capable of reading multiple files from the folder [with read pagination]
-    def read_paginated(self,path:str, page:int, page_size:int) -> Tuple[List[Dict],int, List[pd.DataFrame]]:
-        """
-        Stream JSON files from a file or dictonary and return : 
-        - Paginated records 
-        - Total row counts
-        """
-        fs, _, paths = fsspec.get_fs_token_paths(path)
+    """
+    This method will read json using read stream method
+    """
+    async def stream_and_push(self, ingestion_id: str, request):
+        fs, _, paths = fsspec.get_fs_token_paths(request.file_path)
 
-        offset = (page - 1) * page_size
-        limit = page_size
+        chunk = []
+        chunk_bytes = 0
+        chunk_number = 0
+        total_records = 0
 
-        # page records
-        collected : List[Dict] = []
-        # Ro-level dataframes for memory calculations
-        collected_dfs: List[pd.DataFrame] = []
-        # global row counter
-        current_index = 0
-        # count all rows access all files
-        total_rows = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            for base_path in paths:
+                files = (
+                    fs.glob(f"{base_path.rstrip('/')}/**/*.json")
+                    if fs.isdir(base_path)
+                    else [base_path]
+                )
 
-        # find all the files in a directory via looping
-        for base_path in paths:
-            files = (
-                fs.glob(f"{base_path.rstrip('/')}/**/*.json")
-                if fs.isdir(base_path)
-                else [base_path]
+                for file in files:
+                    with fs.open(file, "rb") as f:
+                        for record in ijson.items(f, "item"):
+                            record_bytes = len(orjson.dumps(record, default=orjson_default)
+
+)
+
+                            if self._should_flush(
+                                request,
+                                chunk,
+                                chunk_bytes,
+                                record_bytes
+                            ):
+                                await self._send_chunk(
+                                    client,
+                                    request.callback_url,
+                                    ingestion_id,
+                                    chunk_number,
+                                    chunk,
+                                    False
+                                )
+                                chunk_number += 1
+                                chunk.clear()
+                                chunk_bytes = 0
+
+                            chunk.append(record)
+                            chunk_bytes += record_bytes
+                            total_records += 1
+
+            # Final chunk
+            if chunk:
+                await self._send_chunk(
+                    client,
+                    request.callback_url,
+                    ingestion_id,
+                    chunk_number,
+                    chunk,
+                    True
+                )
+
+            # Completion event
+            await client.post(
+                request.callback_url,
+                json={
+                    "ingestion_id": ingestion_id,
+                    "status": "COMPLETED",
+                    "total_records": total_records
+                }
             )
 
-            for file in files:
-                # read each file inside the current directory
-                with fs.open(file,'r') as f:
-                    df = pd.read_json(f,orient="records",dtype=False)
+    def _should_flush(self, request, chunk, chunk_bytes, next_record_bytes):
+        if request.chunk_size_by_records:
+            return len(chunk) >= request.chunk_size_by_records
+        return (chunk_bytes + next_record_bytes) > request.chunk_size_by_memory
 
-                # record level streaming loop
-                records = df.to_dict(orient="records")
+    async def _send_chunk(
+        self,
+        client,
+        url,
+        ingestion_id,
+        chunk_number,
+        records,
+        is_last
+    ):
+        payload = {
+            "ingestion_id": ingestion_id,
+            "chunk_number": chunk_number,
+            "records": records,
+            "is_last": is_last
+        }
 
-                for idx, record in enumerate(records):
-                    # always count total rows
-                    total_rows += 1
-                    
-                    # Skip until offset
-                    if current_index < offset:
-                        current_index += 1
-                        continue 
+        for attempt in range(3):
+            try:
+                resp = await client.post(
+                    url,
+                    content=orjson.dumps(payload, default=orjson_default),
+                    headers={"Content-Type": "application/json"}
+                )
+                resp.raise_for_status()
+                return
+            except Exception:
+                if attempt == 2:
+                    raise
 
-                    # Collect page data 
-                    if len(collected) < limit:
-                        collected.append(record)
-                        collected_dfs.append(df.iloc[[idx]])
-                        current_index += 1
-                    else:
-                        # page is full --> stop early
-                        return collected, total_rows, collected_dfs                   
-        return collected, total_rows, collected_dfs
+

@@ -1,9 +1,10 @@
 # import fast-api related libraries and packages
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, BackgroundTasks
+import uuid
 
 # import request response model
 from app.schemas.request_model import IngestionRequest
-from app.schemas.response_model import IngestResponse
+from app.schemas.response_model import IngestStartResponse
 
 # import error messages
 from app.utils.error_messages import ErrorMessages
@@ -15,20 +16,19 @@ from app.services.excel_reader import ExcelIngestionService # import excel inges
 
 class IngestionController:
     def __init__(self):
-        self.json_ingestion_service = JsonIngestionService()
-        self.memory_service = DataFrameMemoryService()
+        self.streamer = JsonIngestionService()
         self.excel_ingestion_service = ExcelIngestionService()
 
 
-    def ingest(self, request: IngestionRequest) -> IngestResponse:
-        # Request parameter validation logic
-        if not request.file_path:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=ErrorMessages.FILE_URL_IS_NONE.value
+    def ingest(self, request, bg: BackgroundTasks) -> IngestStartResponse:
+        ingestion_id = str(uuid.uuid4())
+        try:
+            bg.add_task(
+                self.streamer.stream_and_push,
+                ingestion_id,
+                request
             )
-
-        if not request.file_type:
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=ErrorMessages.FILE_TYPE_IS_NONE.value
@@ -68,6 +68,10 @@ class IngestionController:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=str(e)
             )
+
+        return IngestStartResponse(
+            status="STARTED",
+            ingestion_id=ingestion_id
         # Invalid json file exception handling
         except ValueError as e:
             raise HTTPException(

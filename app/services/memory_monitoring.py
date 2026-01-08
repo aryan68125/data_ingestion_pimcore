@@ -12,3 +12,9 @@ class DataFrameMemoryService:
         Returns memory usage of a DataFrame in bytes
         """
         return int(df.memory_usage(deep=True).sum())
+    
+
+
+
+
+    
