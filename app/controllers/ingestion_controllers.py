@@ -11,11 +11,14 @@ from app.utils.error_messages import ErrorMessages
 # import services here
 from app.services.json_reader import JsonIngestionService
 from app.services.memory_monitoring import DataFrameMemoryService
+from app.services.excel_reader import ExcelIngestionService # import excel ingestion service
 
 class IngestionController:
     def __init__(self):
         self.json_ingestion_service = JsonIngestionService()
         self.memory_service = DataFrameMemoryService()
+        self.excel_ingestion_service = ExcelIngestionService()
+
 
     def ingest(self, request: IngestionRequest) -> IngestResponse:
         # Request parameter validation logic
@@ -34,11 +37,30 @@ class IngestionController:
         # Ingestion logic
         try:
             # paginated read json data logic
-            records, total_rows, page_dfs = self.json_ingestion_service.read_paginated(
-                path=request.file_path,
-                page=request.page,
-                page_size=request.page_size
-            )
+            # records, total_rows, page_dfs = self.json_ingestion_service.read_paginated(
+            #     path=request.file_path,
+            #     page=request.page,
+            #     page_size=request.page_size
+            # )
+            if request.file_type.lower() == "json":
+                records, total_rows, page_dfs = self.json_ingestion_service.read_paginated(
+                    path=request.file_path,
+                    page=request.page,
+                    page_size=request.page_size
+                )
+
+            elif request.file_type.lower() == "excel":
+                records, total_rows, page_dfs = self.excel_ingestion_service.read_paginated(
+                    path=request.file_path,
+                    page=request.page,
+                    page_size=request.page_size
+                )
+
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ErrorMessages.INVALID_FILE_TYPE.value
+                )
 
         # Exception handling 
         except FileNotFoundError as e:
@@ -50,13 +72,13 @@ class IngestionController:
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Invalid JSON file: {str(e)}"
+                detail=str(e)
             )
 
-        except Exception:
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=ErrorMessages.INTERNAL_SERVER_ERROR.value
+                detail=str(e)
             )
         
         # Memory taken by the dataframe
