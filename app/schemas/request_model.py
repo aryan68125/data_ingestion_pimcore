@@ -5,7 +5,8 @@ from app.utils.error_messages import ErrorMessages
 class IngestionRequest(BaseModel):
     file_path : str = Field(default=None, description="Input file path or url")
     file_type : str = Field(default="json", description="Type of input file you want to ingest (JSON or EXCEL)")
-    page: int = Field(default=1, ge=1, description="Page number (1-based)")
+    # page: int = Field(default=1, ge=1, description="Page number (1-based)") # remove this 
+    callback_url : str = Field(default=None,description="Send data to pim-core using this call-back url")
     chunk_size_by_records: Optional[int] = Field(default=None, ge=1, le=4000, description="Define your chunk size by number of records per chunk")
     # Do NOT exceed memory under ANY circumstances — even for the first row 
     chunk_size_by_memory: Optional[int] = Field(default=None,description = "Define your chunk size by memory taken by dataframe in bytes")
@@ -18,13 +19,19 @@ class IngestionRequest(BaseModel):
                 detail=ErrorMessages.FILE_URL_IS_NONE.value
             )
         
+        if not self.callback_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ErrorMessages.CALL_BACK_URL_IS_NONE.value
+            )
+        
         if not self.file_type:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ErrorMessages.FILE_TYPE_IS_NONE.value
             )
         
-        if not self.chunk_size_by_records and not self.chunk_size_by_memory:
+        if self.chunk_size_by_records is None and self.chunk_size_by_memory is None:
             raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ErrorMessages.NEITHER_CHUNK_SIZE_PROVIDED.value
