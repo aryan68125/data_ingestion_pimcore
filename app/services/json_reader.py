@@ -3,7 +3,14 @@ import ijson
 import fsspec
 from typing import List, Dict, Tuple, Optional
 
+# ort json parser
 from app.utils.json_decimal_encoder import orjson_default
+
+# import data integrity manager
+from app.services.data_integrity_manager import ChunkIntegrityManager
+
+# import error messages
+from app.utils.error_messages import ErrorMessages
 
 import httpx
 import orjson
@@ -93,9 +100,18 @@ class JsonIngestionService:
         records,
         is_last
     ):
+        # Data integrity check related logic (checksum mechanism)
+        checksum = ChunkIntegrityManager.compute_checksum(records)
+        chunk_id = ChunkIntegrityManager.build_chunk_id(
+            ingestion_id, chunk_number
+        )
+
+
         payload = {
             "ingestion_id": ingestion_id,
             "chunk_number": chunk_number,
+            "chunk_id":chunk_id,
+            "checksum":checksum,
             "records": records,
             "is_last": is_last
         }
@@ -109,16 +125,27 @@ class JsonIngestionService:
                 )
 
                 # Re-write the logic using ACK validation for fault tolerant system and re-tries
-                resp.raise_for_status()
+                # resp.raise_for_status()
+                # ack_response = resp.json()
+                # ack = ack_response.get("ack")
+
+                # Added checksum mechanism to make sure chunk wise data ingegrity along with ack validation for fault tolerant system and re-tries
                 ack_response = resp.json()
-                ack = ack_response.get("content").get("ack")
+                ack = ack_response.get("ack")
+
                 # raise exception when the chunk is rejected due to errors 
                 if ack is not True:
+                    if ack_response.get("error") == ErrorMessages.OUT_OF_ORDER_CHUNK.value:
+                        # Write the logic to handle the case when we get the chunk out of order error 
+                        raise Exception(
+                                f"Chunk {chunk_number} rejected: {ack_response.get("error")}"
+                        ) 
                     raise Exception(
-                        f"Chunk {chunk_number} rejected: {ack_response.get('error')}"
+                        f"Chunk {chunk_number} rejected: {ack_response.get("error")}"
                 )
                 return
-            except Exception:
+            except Exception as e:
+                print(f"Retry {attempt + 1} for chunk {chunk_number}: {e}")
                 if attempt == 2:
                     raise
 

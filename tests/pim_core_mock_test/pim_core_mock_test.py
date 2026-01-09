@@ -3,13 +3,22 @@ This file is written to test the microservice by simulating behaviour of pim-cor
 for data ingestion using json files
 """
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.responses import JSONResponse
 
 # import response model
-from schemas.response_model import PimCoreCallBackResponse, InnerResponseContent
+from schemas.response_model import PimCoreCallBackResponse
+
+# import chunk data integrity validator
+from services.chunk_data_integrity_validator import ChunkValidator
+
+# import error message from utils
+from utility.error_messages import ErrorMessages
 
 app = FastAPI()
+
+# chunk validator
+chunk_validator = ChunkValidator()
 
 # new code with ACK/NACK implementation to make the ingestion pipeline resilient to failures
 total_records_recieved = 0
@@ -17,6 +26,30 @@ total_records_recieved = 0
 async def receive_chunk(request: Request) -> PimCoreCallBackResponse:
     global total_records_recieved
     payload = await request.json()
+
+    if payload.get("status") == "COMPLETED":
+        print(">>>>INGESTION COMPLETED<<<<")
+        print(f"Ingestion: {payload.get("ingestion_id")}")
+        print(f"Total records: {payload.get("total_records")}")
+        print(f"Last chunk: {payload.get("chunk_number")}")
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status":payload.get("status"),
+                "ack": True,
+                "ingestion_id": payload.get("ingestion_id"),
+                "chunk_number": payload.get("chunk_number")
+            }
+        )
+
+    # validate chunks recieved from the fast-api microservice
+    ack, chunk_validity_error = chunk_validator.validate(
+        ingestion_id=payload.get("ingestion_id"),
+        chunk_id=payload.get("chunk_id"),
+        chunk_number=payload.get("chunk_number"),
+        records=payload.get("records", []),
+        checksum=payload.get("checksum"),
+    )
 
     ingestion_id = payload.get("ingestion_id")
     chunk_number = payload.get("chunk_number")
@@ -28,24 +61,33 @@ async def receive_chunk(request: Request) -> PimCoreCallBackResponse:
 
     # Simulate validation / processing
     if not records:
-        return PimCoreCallBackResponse(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            content=InnerResponseContent(
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=PimCoreCallBackResponse(
                 ack=False,
                 ingestion_id=ingestion_id,
                 chunk_number=chunk_number,
-                error="Empty chunk"
+                error=ErrorMessages.EMPTY_CHUNK.value
+            ).model_dump()
+        )
+    if chunk_validity_error:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=PimCoreCallBackResponse(
+                ack=False,
+                ingestion_id=ingestion_id,
+                chunk_number=chunk_number,
+                error=chunk_validity_error
             ).model_dump()
         )
 
-    return PimCoreCallBackResponse(
+    return JSONResponse(
         status_code=status.HTTP_200_OK,
-            content=InnerResponseContent(
-                ack=True,
-                ingestion_id=ingestion_id,
-                chunk_number=chunk_number,
-                error="Empty chunk"
-            ).model_dump()
+        content=PimCoreCallBackResponse(
+            ack=True,
+            ingestion_id=ingestion_id,
+            chunk_number=chunk_number
+        ).model_dump()
     )
 
 
