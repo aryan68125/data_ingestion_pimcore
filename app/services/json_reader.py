@@ -15,9 +15,13 @@ class JsonIngestionService:
     async def stream_and_push(self, ingestion_id: str, request):
         fs, _, paths = fsspec.get_fs_token_paths(request.file_path)
 
+        # This will hold records in the current chunk
         chunk = []
+        # size of chunk in bytes
         chunk_bytes = 0
+        # chunk sequence number
         chunk_number = 0
+        # audit counter
         total_records = 0
 
         async with httpx.AsyncClient(timeout=60) as client:
@@ -30,6 +34,7 @@ class JsonIngestionService:
 
                 for file in files:
                     with fs.open(file, "rb") as f:
+                        # This logic will read record one by one making sure that only one record remains in the memory during processing
                         for record in ijson.items(f, "item"):
                             record_bytes = len(orjson.dumps(record, default=orjson_default)
 
