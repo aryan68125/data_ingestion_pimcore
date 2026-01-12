@@ -3,6 +3,7 @@ This repo holds the code for fast-api micro service for data ingestion from exce
 
 ## Project architecture
 ### Directories 
+```bash
 app
 ├── api
 │   ├── ingest_data.py
@@ -42,6 +43,7 @@ app
     ├── logger.py
     ├── log_initializer.py
     ├── logs_re_namer.py
+```
 
 #### app/api/
 Purpose: Defines HTTP endpoints and request/response boundaries.
