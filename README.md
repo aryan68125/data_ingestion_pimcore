@@ -45,7 +45,7 @@ app
     ├── logs_re_namer.py
 ```
 
-#### app/api/
+#### **app/api/**
 Purpose: Defines HTTP endpoints and request/response boundaries.
 
 Contains: ingest_data.py
@@ -57,7 +57,7 @@ Responsibilities:
 - Delegate execution to controllers
 - Return HTTP responses
 
-#### app/controllers/
+#### **app/controllers/**
 Purpose: Coordinates what should happen, not how it happens.
 
 Contains: ingestion_controllers.py
@@ -74,7 +74,7 @@ Why I chose to write services orchestration logic inside controllers instead of 
 - Keeps services reusable
 - Allows orchestration changes without touching core logic
 
-#### app/core/
+#### **app/core/**
 Purpose: Holds application-wide configuration.
 
 Contains: config.py
@@ -89,7 +89,7 @@ Why this exists:
 - Avoids hardcoding values across the codebase
 - Central source of truth for configuration
 
-#### app/logs/
+#### **app/logs/**
 ```bash
 logs/
  ├── debug/
@@ -109,7 +109,7 @@ Separation by level:
 - info → business milestones
 - error → failures & alerts
 
-#### app/schemas/
+#### **app/schemas/**
 Purpose: Defines what data looks like, not what you do with it.
 
 Contains:
@@ -127,7 +127,7 @@ Why I chose to enforce pydantic models both in request and response?
 - Early failure instead of silent corruption
 - Self-documenting APIs
 
-#### app/services/
+#### **app/services/**
 Purpose: Implements what the system actually does.
 
 Contains:
@@ -149,7 +149,7 @@ Key characteristics:
 - Reusable
 - Framework-agnostic
 
-#### app/utils/
+#### **app/utils/**
 Purpose: Provides generic, reusable helpers that support services but are not business logic.
 
 Contains:
