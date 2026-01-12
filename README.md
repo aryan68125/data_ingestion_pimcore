@@ -190,4 +190,19 @@ and run this command
 ```bash
 uvicorn pim_core_mock_test:app --port 9000 --reload
 ```
-This command will run a mock pim-core callback url and this particular url is used by the microservice to dump all the streamed data.
+This command will run a mock pim-core callback url and this particular url is used by the microservice to dump all the streamed data. <br>
+After you run this mock pim-core callback url api you will have to include this url 
+```bash 
+http://127.0.0.1:9000/callback
+``` 
+in your request when hitting the api for data ingestion.
+
+If you want to know more about the api then after running the micro-service server you need to go to this url to access the self documenting docs for the apis of the microservice.
+```bash
+http://127.0.0.1:8000/docs
+```
+
+If want to access the self documenting docs for the mock pim-core apis when go to this url
+```bash
+http://127.0.0.1:9000/docs
+``` 
