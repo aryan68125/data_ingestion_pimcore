@@ -219,6 +219,7 @@ For this I have implemented
 - Asynchronous ingestion
 - External system ACK-driven
 
+## Explainaing my implementation for data ingestion using json files : 
 ### Streaming ingestion (not batch load)
 What this means:
 - The entire file is never loaded into memory
