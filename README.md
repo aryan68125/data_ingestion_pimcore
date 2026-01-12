@@ -218,3 +218,216 @@ For this I have implemented
 - Data-integrity guaranteed
 - Asynchronous ingestion
 - External system ACK-driven
+
+### Streaming ingestion (not batch load)
+What this means:
+- The entire file is never loaded into memory
+- Records are processed one by one
+- The system scales to very large files
+```python
+for record in ijson.items(f, "item"):
+```
+How it works?
+- ijson parses JSON incrementally
+- Each record is yielded as soon as it’s read
+- Memory usage stays bounded regardless of file size
+Why this matters for Pimcore?
+- Pimcore does not get overwhelmed
+- Large catalog/product files can be ingested safely
+- No JVM/PHP memory spikes on the Pimcore side
+#### **Chunked transfer**
+```python
+chunk.append(record)
+
+if self._should_flush(...):
+    await self._send_chunk(...)
+```
+How chunks are formed?
+- Records accumulate in chunk
+- Chunk is flushed when:
+    - record count limit OR
+    - memory limit is reached
+Pimcore impact
+- Each request is small
+- Failures are isolated per chunk
+- Easy retry & validation
+#### **Back-pressure aware (chunk sizing)**
+The sender adapts how much data it sends at once to avoid overwhelming the receiver.
+```python
+def _should_flush(self, request, chunk, chunk_bytes, next_record_bytes):
+```
+```python
+len(chunk) >= request.chunk_size_by_records
+OR
+(chunk_bytes + next_record_bytes) > request.chunk_size_by_memory
+```
+Runtime behavior
+- Pimcore decides its tolerance
+- Pimcore passes:
+    - chunk_size_by_records OR
+    - chunk_size_by_memory
+- The ingestion service respects it strictly
+Why this is important?
+- Pimcore controls ingestion pressure
+- No uncontrolled payload sizes
+- Prevents PHP request size / proxy truncation issues
+#### **Network-fault tolerant**
+What this means ? <br>
+Temporary network failures do not break ingestion.
+```python
+for attempt in range(3):
+    try:
+        resp = await client.post(...)
+        if ack is not True:
+            raise Exception
+        return
+    except Exception:
+        if attempt == 2:
+            raise
+```
+Runtime behavior
+- Each chunk:
+    - is retried up to 3 times
+- Failure of one chunk:
+    - does NOT affect previous chunks
+- Hard failure only after retries exhausted
+Pimcore impact
+- Temporary downtime does not cause data loss
+- Retries are chunk-scoped, not file-scoped
+
+#### **Data-integrity guaranteed**
+Pimcore receives exactly the same data that was sent — no corruption, no truncation, no reordering.
+Checksum creation (microservice side) (sender)
+```python
+checksum = ChunkIntegrityManager.compute_checksum(records)
+``` 
+```python
+orjson.dumps(records, option=OPT_SORT_KEYS, default=orjson_default)
+```
+Validation (Pimcore callback side)
+```python
+calculated = sha256(canonical_dumps(records))
+if calculated != checksum:
+    ack = False
+```
+What problems this prevents?
+- Partial transmission
+- Proxy truncation
+- Corrupted JSON
+- Re-ordered keys
+- Duplicate chunk replays
+```python
+orjson.OPT_SORT_KEYS
+```
+This guarantees:
+- Deterministic JSON byte representation
+- Same checksum on both sides
+
+#### **Asynchronous ingestion**
+The API responds immediately, ingestion continues in background.
+```python
+bg.add_task(self.json_streamer.stream_and_push, ingestion_id, request)
+```
+Runtime behavior
+- Client calls /api/ingest
+- Response returns:
+    ```json
+    { "status": "STARTED", "ingestion_id": "..." }
+    ```
+- Actual ingestion continues asynchronously
+
+#### **External system ACK-driven**
+HTTP success ≠ data accepted. Pim-core explicitely say ```ack = true```
+```python
+ack = ack_response.get("ack")
+
+if ack is not True:
+    raise Exception(...)
+```
+Pimcore controls ingestion correctness
+- Pimcore validates:
+    - ordering
+    - checksum
+    - duplicates
+- Pimcore decides acceptance
+- Sender reacts accordingly
+Why this is critical?
+- HTTP 200 alone is meaningless
+- Business-level success must be explicit
+
+#### **Ordered, idempotent delivery**
+What this means?
+- Chunks arrive in order
+- Duplicate chunks don’t cause duplication
+```python
+chunk_id = f"{ingestion_id}:{chunk_number}"
+```
+```python
+if chunk_id in processed_chunks:
+    return ack=True
+```
+```python
+if chunk_number != last + 1:
+    return OUT_OF_ORDER_CHUNK
+```
+Pimcore guarantees
+- No duplicate writes
+- No skipped chunks
+- Deterministic ingestion
+
+#### **Completion handshake**
+Pim-core explicitely told all chunks are done.
+```python
+await client.post(callback_url, {
+    "status": "COMPLETED",
+    "ingestion_id": ...,
+    "total_records": ...
+})
+```
+Why this matters?
+- Pimcore can:
+    - finalize transactions
+    - release locks
+    - update ingestion status
+- No guessing based on last chunk number
+
+#### **Logging & observability**
+Implemented:
+- Structured logs
+- Rotating logs
+- Separate debug/info/error
+- Deterministic log directories
+- Production-safe logging
+This makes:
+- Debugging ingestion issues practical
+- Auditing possible
+- Post-mortems feasible
+
+## Sequence Diagram 
+Below is a runtime sequence for a complete ingestion. 
+```bash
+sequenceDiagram
+    participant Client
+    participant API as FastAPI API
+    participant Controller
+    participant Service as JsonIngestionService
+    participant Pimcore
+
+    Client->>API: POST /api/ingest
+    API->>Controller: validate request
+    Controller->>Service: start ingestion (background task)
+    API-->>Client: 200 STARTED + ingestion_id
+
+    loop For each record
+        Service->>Service: stream record (ijson)
+        Service->>Service: accumulate chunk
+        Service->>Pimcore: POST chunk (records, checksum, chunk_id)
+        Pimcore-->>Service: ACK / NACK
+        alt NACK
+            Service->>Service: retry chunk (max 3)
+        end
+    end
+
+    Service->>Pimcore: POST status=COMPLETED
+    Pimcore-->>Service: ACK COMPLETED
+```
