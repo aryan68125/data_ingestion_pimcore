@@ -28,6 +28,7 @@ async def receive_chunk(request: Request) -> PimCoreCallBackResponse:
     payload = await request.json()
 
     if payload.get("status") == "COMPLETED":
+        total_records_recieved = 0
         print(">>>>INGESTION COMPLETED<<<<")
         print(f"Ingestion: {payload.get("ingestion_id")}")
         print(f"Total records: {payload.get("total_records")}")

@@ -1,7 +1,5 @@
-import pandas as pd
 import ijson
 import fsspec
-from typing import List, Dict, Tuple, Optional
 
 # ort json parser
 from app.utils.json_decimal_encoder import orjson_default
@@ -15,12 +13,21 @@ from app.utils.error_messages import ErrorMessages
 import httpx
 import orjson
 
+# import logging utility
+from app.utils.logger import LoggerFactory
+
+# initialize logging utility
+info_logger = LoggerFactory.get_info_logger()
+error_logger = LoggerFactory.get_error_logger()
+debug_logger = LoggerFactory.get_debug_logger()
+
 class JsonIngestionService:
     """
     This method will read json using read stream method
     """
     async def stream_and_push(self, ingestion_id: str, request):
         fs, _, paths = fsspec.get_fs_token_paths(request.file_path)
+        debug_logger.debug(f"JsonIngestionService.stream_and_push | file_system={fs} | paths = {paths}")
 
         chunk = []
         chunk_bytes = 0
@@ -36,6 +43,7 @@ class JsonIngestionService:
                 )
 
                 for file in files:
+                    debug_logger.debug(f"JsonIngestionService.stream_and_push | Processing file = {file}")
                     with fs.open(file, "rb") as f:
                         for record in ijson.items(f, "item"):
                             record_bytes = len(orjson.dumps(record, default=orjson_default)
@@ -66,6 +74,7 @@ class JsonIngestionService:
 
             # Final chunk
             if chunk:
+                debug_logger.debug(f"JsonIngestionService.stream_and_push | Processing chunks | ingestion_id = {ingestion_id} | chunk_number = {chunk_number}")
                 await self._send_chunk(
                     client,
                     request.callback_url,
@@ -76,6 +85,7 @@ class JsonIngestionService:
                 )
 
             # Completion event
+            debug_logger.debug(f"JsonIngestionService.stream_and_push | Processed and completed all the chunks | ingestion_id = {ingestion_id} | chunk_number = {chunk_number} | total_records = {total_records} | status = COMPLETED")
             await client.post(
                 request.callback_url,
                 json={
@@ -87,9 +97,13 @@ class JsonIngestionService:
             )
 
     def _should_flush(self, request, chunk, chunk_bytes, next_record_bytes):
-        if request.chunk_size_by_records:
-            return len(chunk) >= request.chunk_size_by_records
-        return (chunk_bytes + next_record_bytes) > request.chunk_size_by_memory
+        should_flush = (
+            len(chunk) >= request.chunk_size_by_records
+            if request.chunk_size_by_records
+            else (chunk_bytes + next_record_bytes) > request.chunk_size_by_memory
+        )
+        debug_logger.debug(f"JsonIngestionService._should_flush | should_flush={should_flush}")
+        return should_flush
 
     async def _send_chunk(
         self,
@@ -131,21 +145,24 @@ class JsonIngestionService:
 
                 # Added checksum mechanism to make sure chunk wise data ingegrity along with ack validation for fault tolerant system and re-tries
                 ack_response = resp.json()
+                debug_logger.debug(f"JsonIngestionService._send_chunk | response from pim core callback url ={ack_response}")
                 ack = ack_response.get("ack")
 
                 # raise exception when the chunk is rejected due to errors 
                 if ack is not True:
                     if ack_response.get("error") == ErrorMessages.OUT_OF_ORDER_CHUNK.value:
                         # Write the logic to handle the case when we get the chunk out of order error 
+                        error_logger.error(f"JsonIngestionService._send_chunk | Chunk {chunk_number} rejected: {ack_response.get("error")}")
                         raise Exception(
                                 f"Chunk {chunk_number} rejected: {ack_response.get("error")}"
-                        ) 
+                        )
+                    error_logger.error(f"JsonIngestionService._send_chunk | Chunk {chunk_number} rejected: {ack_response.get("error")}") 
                     raise Exception(
                         f"Chunk {chunk_number} rejected: {ack_response.get("error")}"
                 )
                 return
             except Exception as e:
-                print(f"Retry {attempt + 1} for chunk {chunk_number}: {e}")
+                error_logger.error(f"JsonIngestionService._send_chunk | Retry {attempt + 1} for chunk {chunk_number}: {e}")
                 if attempt == 2:
                     raise
 
