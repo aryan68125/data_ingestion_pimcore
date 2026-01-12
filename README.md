@@ -206,3 +206,15 @@ If want to access the self documenting docs for the mock pim-core apis when go t
 ```bash
 http://127.0.0.1:9000/docs
 ``` 
+
+## Purpose of this project 
+Ingest data in fast and reliable way and send the ingested data back to pim-core. 
+
+For this I have implemented 
+- Streaming ingestion (not batch load)
+- Chunked transfer
+- Back-pressure aware (chunk sizing)
+- Network-fault tolerant
+- Data-integrity guaranteed
+- Asynchronous ingestion
+- External system ACK-driven
