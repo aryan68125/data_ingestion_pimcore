@@ -13,7 +13,7 @@ class LogInitializer:
         "info": "info.log",
         "debug": "debug.log",
     }
-
+    
     @classmethod
     def initialize(cls) -> None:
         """

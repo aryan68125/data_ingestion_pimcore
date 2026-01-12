@@ -3,6 +3,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from app.utils.log_initializer import LogInitializer
+from app.utils.logs_re_namer import numbered_log_namer
 
 from app.utils.log_initializer import BASE_LOG_DIR
 
@@ -29,6 +30,8 @@ class LoggerFactory:
             maxBytes=5 * 1024 * 1024,  # 5 MB
             backupCount=5,
         )
+
+        handler.namer = numbered_log_namer
 
         formatter = logging.Formatter(
             "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"
