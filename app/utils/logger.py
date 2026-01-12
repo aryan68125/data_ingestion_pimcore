@@ -30,7 +30,7 @@ class LoggerFactory:
         handler = RotatingFileHandler(
             log_file,
             maxBytes=5 * 1024 * 1024,  # 5 MB
-            backupCount=5,
+            backupCount=10,
         )
 
         handler.namer = numbered_log_namer
