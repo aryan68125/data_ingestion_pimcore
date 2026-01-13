@@ -4,6 +4,8 @@ from openpyxl import load_workbook
 
 from app.utils.logger import LoggerFactory
 from app.services.data_integrity_manager import ChunkIntegrityManager
+from app.utils.logger_info_messages import ExcelInfoMessages
+from app.utils.error_messages import ExcelErrorMessages
 
 info_logger = LoggerFactory.get_info_logger()
 error_logger = LoggerFactory.get_error_logger()
@@ -17,10 +19,12 @@ class ExcelIngestionService:
         chunk_number = 0
         total_records = 0
         
-        info_logger.info(f"ExcelIngestionService.stream_and_push | START | ingestion_id={ingestion_id} | file_path={request.file_path}")
-        debug_logger.debug(
-            "ExcelIngestionService.stream_and_push | workbook_load_started"
+        info_logger.info(
+            ExcelInfoMessages.STREAM_START.value.format(
+                ingestion_id=ingestion_id
+            )
         )
+        info_logger.info(ExcelInfoMessages.WORKBOOK_LOAD_START.value)        
         
         wb = load_workbook(
             filename=request.file_path,
@@ -28,21 +32,22 @@ class ExcelIngestionService:
             data_only=True
         )
         info_logger.info(
-            "ExcelIngestionService.stream_and_push | workbook_loaded"
+            ExcelInfoMessages.WORKBOOK_LOADED.value
         )
-
-        
+            
         sheet = wb.active
         rows = sheet.iter_rows(values_only=True)
 
         header_row = next(rows, None)
         debug_logger.debug(
-            f"ExcelIngestionService.stream_and_push | header_row_detected | header_row={header_row}"
+            f"Header row detected | header_row={header_row}"
         )
 
         if not header_row:
             error_logger.error(
-                f"ExcelIngestionService.stream_and_push | Empty header row | ingestion_id={ingestion_id}"
+                ExcelErrorMessages.EMPTY_HEADER.value.format(
+                    ingestion_id=ingestion_id
+                )
             )
             wb.close()
             return
@@ -52,7 +57,7 @@ class ExcelIngestionService:
             for i, col in enumerate(header_row)
         ]
         debug_logger.debug(
-            f"ExcelIngestionService.stream_and_push | headers_parsed | headers={headers}"
+            f"Headers parsed | headers={headers}"
         )
         async with httpx.AsyncClient(timeout=60) as client:
             for row in rows:
@@ -70,8 +75,8 @@ class ExcelIngestionService:
 
                 if request.chunk_size_by_records and len(chunk) >= request.chunk_size_by_records:
                     debug_logger.debug(
-                        f"ExcelIngestionService.stream_and_push | chunk_created | "
-                        f"ingestion_id={ingestion_id} | chunk_number={chunk_number} | size={len(chunk)}"
+                        f"Chunk created | ingestion_id={ingestion_id} | "
+                        f"chunk_number={chunk_number} | size={len(chunk)}"
                     )
                     await self._send_chunk(
                         client,
@@ -86,8 +91,8 @@ class ExcelIngestionService:
 
             if chunk:
                 debug_logger.debug(
-                    f"ExcelIngestionService.stream_and_push | final_chunk_created | "
-                    f"ingestion_id={ingestion_id} | chunk_number={chunk_number} | size={len(chunk)}"
+                    f"Final chunk created | ingestion_id={ingestion_id} | "
+                    f"chunk_number={chunk_number} | size={len(chunk)}"
                 )
                 await self._send_chunk(
                     client,
@@ -97,11 +102,11 @@ class ExcelIngestionService:
                     chunk,
                     True
                 )
-            debug_logger.debug(
-                f"ExcelIngestionService.stream_and_push | completed | "
-                f"ingestion_id={ingestion_id} | total_records={total_records}"
+            info_logger.info(
+                ExcelInfoMessages.INGESTION_COMPLETED.value.format(
+                    total_records=total_records
+                )
             )
-                    
             await client.post(
                 request.callback_url,
                 json={
@@ -140,11 +145,9 @@ class ExcelIngestionService:
         for attempt in range(3):
             try:
                 debug_logger.debug(
-                    f"ExcelIngestionService._send_chunk | sending_chunk | "
-                    f"chunk_number={chunk_number} | attempt={attempt + 1} | records={len(records)}"
+                    f"Sending chunk | chunk_number={chunk_number} | "
+                    f"attempt={attempt + 1} | records={len(records)}"
                 )
-
-
                 resp = await client.post(
                     url,
                     content=orjson.dumps(payload),
@@ -153,20 +156,18 @@ class ExcelIngestionService:
 
                 ack_response = resp.json()
                 debug_logger.debug(
-                    f"ExcelIngestionService._send_chunk | response from pim core callback url = {ack_response}"
+                    f"Pimcore callback response | response={ack_response}"
                 )
-
-
                 ack = ack_response.get("ack")
 
                 if ack is not True:
                     error = ack_response.get("error")
-
                     error_logger.error(
-                        f"ExcelIngestionService._send_chunk | chunk_rejected | "
-                        f"chunk_number={chunk_number} | error={error}"
+                        ExcelErrorMessages.CHUNK_REJECTED.value.format(
+                            chunk_number=chunk_number,
+                            reason=error
+                        )
                     )
-
                     raise Exception(
                         f"Chunk {chunk_number} rejected: {error}"
                     )
@@ -175,7 +176,11 @@ class ExcelIngestionService:
 
             except Exception as e:
                 error_logger.error(
-                    f"Excel chunk push failed | chunk_number={chunk_number} | attempt={attempt + 1} | error={e}",
+                    ExcelErrorMessages.CHUNK_PUSH_FAILED.value.format(
+                        chunk_number=chunk_number,
+                        attempt=attempt + 1,
+                        error=str(e)
+                    ),
                     exc_info=True
                 )
                 if attempt == 2:
