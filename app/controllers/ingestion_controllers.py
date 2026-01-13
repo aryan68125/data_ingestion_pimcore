@@ -27,7 +27,7 @@ class IngestionController:
 
     def ingest(self, request, bg: BackgroundTasks) -> IngestStartResponse:
         ingestion_id = generate_ingestion_id(request.file_path, request.file_type)
-
+        info_logger.info(f"IngestionController.ingest | This method will make decision based on what file type the client want to ingest data from and fire up the core logic of data ingestion based on the file type for either json files or for excel files.")
         try:
             if request.file_type.lower() == "json":
                 info_logger.info(f"IngestionController.ingest | {LoggerInfoMessages.PROCESS_JSON_FILES.value}")

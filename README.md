@@ -500,3 +500,30 @@ DB ends up with duplicated rows
 Your current system is NOT restart-safe and NOT exactly-once.
 
 It is at-most-once per container lifetime.
+
+
+## Solving The total_records issue — what’s wrong and how to fix it properly
+
+# I have made changes to implement 
+After your latest changes, your ingestion pipeline has the following properties:
+| Capability                         | Status | Why                                    |
+| ---------------------------------- | ------ | -------------------------------------- |
+| Deterministic ingestion_id         | ✅      | `generate_ingestion_id()`              |
+| Chunk-level idempotency            | ✅      | `chunk_id = ingestion_id:chunk_number` |
+| Resume after FastAPI restart       | ✅      | `last_chunk` + skip logic              |
+| No duplicate chunks sent           | ✅      | `if chunk_number > last_chunk`         |
+| Retry on transient failures        | ✅      | 3 retries in `_send_chunk`             |
+| Completion handshake               | ✅      | COMPLETED → ACK → `mark_completed`     |
+| Corrupted / out-of-order detection | ✅      | checksum + validator                   |
+
+
+## Scenario: FastAPI crashes AFTER COMPLETED is sent
+```python
+resp = await client.post(COMPLETED)
+if ack:
+    self.state_store.mark_completed(ingestion_id)
+```
+This ensures:
+- No “false completed” locally
+- PIM Core and FastAPI agree on final state
+One thing to understand (not a bug, just reality) : I am chunk-exactly-once, not record-exactly-once.
