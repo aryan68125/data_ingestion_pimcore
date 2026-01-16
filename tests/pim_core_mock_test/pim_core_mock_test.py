@@ -29,19 +29,9 @@ async def receive_chunk(request: Request) -> PimCoreCallBackResponse:
 
     if payload.get("status") == "COMPLETED":
         ingestion_id = payload.get("ingestion_id")
-        
+
         # reset the total records recieved after it gets the status completed from the fast-api microservice side
         total_records_recieved = 0
-
-        # Reset per-ingestion state
-        chunk_validator.last_chunk_number.pop(ingestion_id, None)
-
-        # Remove processed chunks for this ingestion only
-        chunk_validator.processed_chunks = {
-            cid for cid in chunk_validator.processed_chunks
-            if not cid.startswith(f"{ingestion_id}:")
-        }
-
 
         print(">>>>INGESTION COMPLETED<<<<")
         print(f"Ingestion: {payload.get('ingestion_id')}")

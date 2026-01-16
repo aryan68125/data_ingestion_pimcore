@@ -23,6 +23,11 @@ class IngestionRequest(BaseModel):
     # Do NOT exceed memory under ANY circumstances — even for the first row 
     chunk_size_by_memory: Optional[int] = Field(default=None,description = RequestFieldDescriptions.CHUNK_SIZE_BY_MEMORY.value)
     
+    re_ingestion: bool = Field(
+        default=False,
+        description="Force a new ingestion execution for the same file"
+    )
+    
     @model_validator(mode="after")
     def validate_chunking_mode(self):
         if not self.file_path:
