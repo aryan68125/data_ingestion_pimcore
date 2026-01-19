@@ -13,4 +13,7 @@ tests/test_data/
 .env
 
 # Logs
-*/logs/*
+*/logs/* 
+
+# ingestion state data 
+**/ingestion_state_data/ingestion_state.db
